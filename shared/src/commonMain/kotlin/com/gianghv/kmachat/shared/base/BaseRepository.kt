@@ -58,8 +58,8 @@ abstract class BaseRepository : KoinComponent {
      */
     protected suspend fun <R, T> flowContext(
         context: CoroutineContext = getContext(),
-        block: suspend () -> BaseResponse<R>,
-        mapper: (R) -> T
+        mapper: (R) -> T,
+        block: suspend () -> BaseResponse<R>
     ): Flow<T> =
         withContext(context) {
             flow {
@@ -110,6 +110,43 @@ abstract class BaseRepository : KoinComponent {
                 }
             }
         }
+
+    protected suspend fun launch(
+        context: CoroutineContext = getContext(),
+        block: suspend () -> Unit
+    ): Flow<Unit> = withContext(context) {
+        flow {
+            try {
+                block.invoke()
+                emit(Unit)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Napier.e("Error: ${e.message}")
+                throw ErrorException(e.toError())
+            }
+        }
+    }
+
+    protected suspend fun <R> launchResult(
+        context: CoroutineContext = getContext(),
+        block: suspend () -> R?
+    ): Flow<R> = withContext(context) {
+        flow {
+            try {
+                val response = block.invoke() ?: throw ErrorException(
+                    BaseError.UnknownError(
+                        Exception("Response is null")
+                    )
+                )
+
+                emit(response)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Napier.e("Error: ${e.message}")
+                throw ErrorException(e.toError())
+            }
+        }
+    }
 }
 
 /**
@@ -148,6 +185,7 @@ fun Exception.toError(): BaseError =
         is JsonConvertException, is SerializationException -> BaseError.JsonConvertException
         is ConnectTimeoutException, is SocketTimeoutException, is HttpRequestTimeoutException -> BaseError.ConnectionTimeout
         is UnresolvedAddressException -> BaseError.NetworkError
+        is ErrorException -> this.error
         else -> {
             if ((this.message ?: "").contains("NoRouteToHostException", ignoreCase = true)) {
                 BaseError.NetworkError
